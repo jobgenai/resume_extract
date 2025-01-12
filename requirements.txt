@@ -2,4 +2,3 @@ flask
 pdfminer.six
 python-docx
 gunicorn
-antiword
