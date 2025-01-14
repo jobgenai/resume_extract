@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from pdfminer.high_level import extract_text as extract_pdf_text
 from docx import Document
-import subprocess
+from tika import parser  # Import Tika
 import os
 from io import BytesIO
 
@@ -33,19 +33,21 @@ def extract_text_from_docx(docx_file):
 
 
 def extract_text_from_doc(doc_file):
-    """Extract text from Word (.doc) files using Antiword."""
+    """Extract text from Word (.doc) files using Tika."""
     try:
+        # Save the file temporarily for Tika processing
         temp_filename = "temp.doc"
         with open(temp_filename, "wb") as f:
             f.write(doc_file.read())
 
-        result = subprocess.run(["antiword", temp_filename], capture_output=True, text=True)
-        os.remove(temp_filename)
+        # Use Tika to parse the .doc file
+        parsed = parser.from_file(temp_filename)
+        os.remove(temp_filename)  # Clean up the temporary file
 
-        if result.returncode != 0:
-            raise ValueError(f"Antiword failed: {result.stderr.strip()}")
+        if not parsed or not parsed.get("content"):
+            raise ValueError("Tika failed to extract text from the document.")
 
-        return result.stdout.strip()
+        return parsed["content"].strip()
     except Exception as e:
         raise ValueError(f"Error extracting text from DOC: {e}")
 
