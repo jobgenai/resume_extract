@@ -1,5 +1,3 @@
-flask
-pdfminer.six
-python-docx
-gunicorn
-tika
+Flask==2.3.0
+pdfminer.six==20221105
+python-docx==0.8.11
