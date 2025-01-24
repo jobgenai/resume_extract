@@ -1,16 +1,9 @@
 #!/bin/bash
 
-# Install dependencies
-echo "Installing dependencies..."
+echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
-# Install LibreOffice (if not already installed)
-if ! command -v libreoffice &> /dev/null
-then
-    echo "LibreOffice not found. Installing..."
-    sudo apt-get update && sudo apt-get install -y libreoffice
-else
-    echo "LibreOffice is already installed."
-fi
+echo "Installing LibreOffice..."
+sudo apt-get update && sudo apt-get install -y libreoffice
 
-echo "Build process complete."
+echo "Build completed successfully."
