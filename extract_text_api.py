@@ -1,55 +1,59 @@
 from flask import Flask, request, jsonify
 from pdfminer.high_level import extract_text as extract_pdf_text
 from docx import Document
-from tika import parser  # Import Tika
+import subprocess
 import os
-from io import BytesIO
+import tempfile
 
 app = Flask(__name__)
+
+# Custom directory to avoid permission issues
+TEMP_DIR = os.path.expanduser("~/my_temp_files")
+os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Maximum file size (5 MB)
 MAX_FILE_SIZE = 5 * 1024 * 1024
 
+LIBREOFFICE_PATH = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
 
-def extract_text_from_pdf(pdf_file):
-    """Extract text from PDFs using PDFMiner."""
+
+def convert_to_pdf(input_file, extension):
+    """Convert DOC/DOCX to PDF using LibreOffice."""
     try:
-        # Convert FileStorage object to bytes for PDFMiner
-        file_content = pdf_file.read()
-        text = extract_pdf_text(BytesIO(file_content))
+        input_path = os.path.join(TEMP_DIR, f"input.{extension}")
+        output_path = os.path.join(TEMP_DIR, "output.pdf")
+
+        # Save the uploaded file
+        with open(input_path, "wb") as f:
+            f.write(input_file.read())
+
+        # LibreOffice command to convert to PDF
+        command = [
+            LIBREOFFICE_PATH,
+            "--headless",
+            "--convert-to", "pdf",
+            "--outdir", TEMP_DIR,
+            input_path
+        ]
+
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        if not os.path.exists(output_path):
+            raise ValueError(f"Failed to convert document to PDF. Error: {result.stderr.strip()}")
+
+        return output_path
+
+    except Exception as e:
+        raise ValueError(f"Error converting to PDF: {e}")
+
+
+def extract_text_from_pdf(pdf_path):
+    """Extract text from the converted PDF."""
+    try:
+        text = extract_pdf_text(pdf_path)
         return text.strip()
     except Exception as e:
         raise ValueError(f"Error extracting text from PDF: {e}")
-
-
-def extract_text_from_docx(docx_file):
-    """Extract text from Word (.docx) files."""
-    try:
-        doc = Document(docx_file)
-        text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
-        return text.strip()
-    except Exception as e:
-        raise ValueError(f"Error extracting text from DOCX: {e}")
-
-
-def extract_text_from_doc(doc_file):
-    """Extract text from Word (.doc) files using Tika."""
-    try:
-        # Save the file temporarily for Tika processing
-        temp_filename = "temp.doc"
-        with open(temp_filename, "wb") as f:
-            f.write(doc_file.read())
-
-        # Use Tika to parse the .doc file
-        parsed = parser.from_file(temp_filename)
-        os.remove(temp_filename)  # Clean up the temporary file
-
-        if not parsed or not parsed.get("content"):
-            raise ValueError("Tika failed to extract text from the document.")
-
-        return parsed["content"].strip()
-    except Exception as e:
-        raise ValueError(f"Error extracting text from DOC: {e}")
 
 
 @app.route('/extract-text', methods=['POST'])
@@ -68,16 +72,20 @@ def extract_text():
         return jsonify({"error": "File size exceeds the 5 MB limit."}), 400
 
     try:
-        if filename.endswith('.pdf'):
-            text = extract_text_from_pdf(file)
-        elif filename.endswith('.docx'):
-            text = extract_text_from_docx(file)
+        if filename.endswith('.docx'):
+            pdf_path = convert_to_pdf(file, "docx")
         elif filename.endswith('.doc'):
-            text = extract_text_from_doc(file)
+            pdf_path = convert_to_pdf(file, "doc")
         else:
-            return jsonify({"error": "Unsupported file type. Only .pdf, .docx, and .doc are supported."}), 400
+            return jsonify({"error": "Unsupported file type. Only .docx and .doc are supported."}), 400
 
-        return jsonify({"text": text}), 200
+        extracted_text = extract_text_from_pdf(pdf_path)
+
+        # Cleanup temporary files
+        os.remove(pdf_path)
+
+        return jsonify({"text": extracted_text}), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
