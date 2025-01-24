@@ -1,33 +1,26 @@
-from flask import Flask, request, jsonify
-from pdfminer.high_level import extract_text as extract_pdf_text
-from docx import Document
 import subprocess
 import os
-import tempfile
+from flask import Flask, request, jsonify
+from pdfminer.high_level import extract_text as extract_pdf_text
 
 app = Flask(__name__)
 
-# Custom directory to avoid permission issues
-TEMP_DIR = os.path.expanduser("~/my_temp_files")
+# Temporary directory
+TEMP_DIR = "/tmp/resume_processing"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# Maximum file size (5 MB)
-MAX_FILE_SIZE = 5 * 1024 * 1024
-
-LIBREOFFICE_PATH = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-
+LIBREOFFICE_PATH = "/usr/bin/libreoffice"  # Correct path for Render (Linux)
 
 def convert_to_pdf(input_file, extension):
-    """Convert DOC/DOCX to PDF using LibreOffice."""
+    """Convert DOC/DOCX to PDF using LibreOffice on Render"""
     try:
         input_path = os.path.join(TEMP_DIR, f"input.{extension}")
         output_path = os.path.join(TEMP_DIR, "output.pdf")
 
-        # Save the uploaded file
         with open(input_path, "wb") as f:
             f.write(input_file.read())
 
-        # LibreOffice command to convert to PDF
+        # Command to convert document to PDF
         command = [
             LIBREOFFICE_PATH,
             "--headless",
@@ -46,15 +39,13 @@ def convert_to_pdf(input_file, extension):
     except Exception as e:
         raise ValueError(f"Error converting to PDF: {e}")
 
-
 def extract_text_from_pdf(pdf_path):
-    """Extract text from the converted PDF."""
+    """Extract text from the converted PDF"""
     try:
         text = extract_pdf_text(pdf_path)
         return text.strip()
     except Exception as e:
         raise ValueError(f"Error extracting text from PDF: {e}")
-
 
 @app.route('/extract-text', methods=['POST'])
 def extract_text():
@@ -64,31 +55,18 @@ def extract_text():
     file = request.files['file']
     filename = file.filename.lower()
 
-    # Check file size
-    file.seek(0, os.SEEK_END)
-    file_size = file.tell()
-    file.seek(0)
-    if file_size > MAX_FILE_SIZE:
-        return jsonify({"error": "File size exceeds the 5 MB limit."}), 400
+    if filename.endswith('.docx'):
+        pdf_path = convert_to_pdf(file, "docx")
+    elif filename.endswith('.doc'):
+        pdf_path = convert_to_pdf(file, "doc")
+    else:
+        return jsonify({"error": "Unsupported file type. Only .docx and .doc are supported."}), 400
 
-    try:
-        if filename.endswith('.docx'):
-            pdf_path = convert_to_pdf(file, "docx")
-        elif filename.endswith('.doc'):
-            pdf_path = convert_to_pdf(file, "doc")
-        else:
-            return jsonify({"error": "Unsupported file type. Only .docx and .doc are supported."}), 400
+    extracted_text = extract_text_from_pdf(pdf_path)
 
-        extracted_text = extract_text_from_pdf(pdf_path)
+    os.remove(pdf_path)  # Cleanup the converted PDF
 
-        # Cleanup temporary files
-        os.remove(pdf_path)
-
-        return jsonify({"text": extracted_text}), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    return jsonify({"text": extracted_text}), 200
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
